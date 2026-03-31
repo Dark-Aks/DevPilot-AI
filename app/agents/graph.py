@@ -41,16 +41,16 @@ from typing import Any
 from langgraph.graph import StateGraph, START, END
 
 from app.config import settings
-from app.core.errors import agent_fallback
-from app.core.llm import get_llm
-from app.core.logging import get_logger
-from app.core.metrics import RequestMetrics, track_latency, count_tokens
-from app.services.agents.state import AgentState, ChangeType
-from app.services.agents.code_understanding import run_code_understanding
-from app.services.agents.test_generator import run_test_generator
-from app.services.agents.documentation import run_documentation
-from app.services.agents.review import run_review
-from app.services.rag.retriever import retrieve_for_changes, format_context
+from app.utils.errors import agent_fallback
+from app.utils.llm import get_llm
+from app.utils.logging import get_logger
+from app.utils.metrics import RequestMetrics, track_latency, count_tokens
+from app.agents.state import AgentState, ChangeType
+from app.agents.code_understanding import run_code_understanding
+from app.agents.test_generator import run_test_generator
+from app.agents.documentation import run_documentation
+from app.agents.review import run_review
+from app.rag.retriever import retrieve_for_changes, format_context
 
 logger = get_logger(__name__)
 
@@ -343,22 +343,6 @@ async def run_workflow(
         review_count=len(result.get("review_findings", [])),
         error_count=len(result.get("errors", [])),
         total_ms=timing.get("duration_ms", 0),
-    )
-
-    return result
-
-    logger.info("workflow_start", repo=repo, changed_files=len(changed_files))
-
-    result = await _workflow.ainvoke(initial_state)
-
-    logger.info(
-        "workflow_end",
-        repo=repo,
-        has_understanding=result.get("code_understanding") is not None,
-        test_count=len(result.get("test_suggestions", [])),
-        doc_count=len(result.get("documentation_updates", [])),
-        review_count=len(result.get("review_findings", [])),
-        error_count=len(result.get("errors", [])),
     )
 
     return result

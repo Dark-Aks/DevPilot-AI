@@ -23,10 +23,10 @@ from typing import Any
 from langchain_core.documents import Document
 
 from app.config import settings
-from app.core.cache import retrieval_cache, get_retrieval_cache_key
-from app.core.logging import get_logger
-from app.core.metrics import track_latency
-from app.services.rag.vectorstore import get_vectorstore
+from app.utils.cache import retrieval_cache, get_retrieval_cache_key
+from app.utils.logging import get_logger
+from app.utils.metrics import track_latency
+from app.rag.vectorstore import get_vectorstore
 
 logger = get_logger(__name__)
 

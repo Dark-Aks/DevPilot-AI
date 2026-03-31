@@ -6,12 +6,12 @@ from fastapi import APIRouter, BackgroundTasks, Header, Request, status
 from fastapi.responses import JSONResponse
 
 from app.models.schemas import WebhookResponse
-from app.services.github.webhook_handler import (
+from app.services.webhook_handler import (
     process_push_event,
     verify_webhook_signature,
 )
-from app.services.agents.graph import run_workflow
-from app.core.logging import get_logger
+from app.agents.graph import run_workflow
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["webhook"])
@@ -33,7 +33,7 @@ async def _process_webhook(payload: dict) -> None:
             changed_files = push_result["changed_files"]
 
             # Fetch diff summary for agents
-            from app.services.github.client import GitHubClient
+            from app.services.client import GitHubClient
 
             client = GitHubClient()
             owner, repo_name = repo.split("/", 1)
@@ -59,7 +59,7 @@ async def _process_webhook(payload: dict) -> None:
             # Optionally post as PR comment
             pr_number = await client.get_pr_for_commit(owner, repo_name, after)
             if pr_number:
-                from app.core.formatting import format_pr_comment
+                from app.utils.formatting import format_pr_comment
 
                 comment = format_pr_comment(workflow_result)
                 await client.post_pr_comment(owner, repo_name, pr_number, comment)

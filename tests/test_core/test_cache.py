@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from app.core.cache import LRUCache, cache_stats
+from app.utils.cache import LRUCache, cache_stats
 
 
 def test_lru_cache_set_and_get():
@@ -38,7 +38,7 @@ def test_lru_cache_hit_miss_stats():
     cache.set("k", "v")
     cache.get("k")      # hit
     cache.get("other")   # miss
-    stats = cache.stats()
+    stats = cache.stats
     assert stats["hits"] == 1
     assert stats["misses"] == 1
     assert stats["size"] == 1
@@ -46,6 +46,6 @@ def test_lru_cache_hit_miss_stats():
 
 def test_cache_stats_returns_all_caches():
     stats = cache_stats()
-    assert "retrieval" in stats
-    assert "embedding" in stats
-    assert "llm" in stats
+    assert "retrieval_cache" in stats
+    assert "embedding_cache" in stats
+    assert "llm_cache" in stats

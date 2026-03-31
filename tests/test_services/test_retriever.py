@@ -4,10 +4,10 @@ from unittest.mock import patch, MagicMock
 
 from langchain_core.documents import Document
 
-from app.services.rag.retriever import retrieve, format_context, _tokenize, _keyword_score
+from app.rag.retriever import retrieve, format_context, _tokenize, _keyword_score
 
 
-@patch("app.services.rag.retriever.get_vectorstore")
+@patch("app.rag.retriever.get_vectorstore")
 def test_retrieve_calls_vectorstore(mock_get_vs):
     mock_store = MagicMock()
     mock_store.similarity_search.return_value = [
@@ -33,7 +33,7 @@ def test_retrieve_calls_vectorstore(mock_get_vs):
     mock_store.similarity_search.assert_called_once()
 
 
-@patch("app.services.rag.retriever.get_vectorstore")
+@patch("app.rag.retriever.get_vectorstore")
 def test_retrieve_with_reranking(mock_get_vs):
     """Test that re-ranking reorders results by combined score."""
     mock_store = MagicMock()

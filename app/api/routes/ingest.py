@@ -5,8 +5,8 @@ import re
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 
 from app.models.schemas import IngestRequest, IngestResponse
-from app.services.github.webhook_handler import ingest_full_repo
-from app.core.logging import get_logger
+from app.services.webhook_handler import ingest_full_repo
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["ingest"])

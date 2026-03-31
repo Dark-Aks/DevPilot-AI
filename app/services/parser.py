@@ -8,7 +8,7 @@ import tree_sitter_javascript as tsjavascript
 import tree_sitter_typescript as tstypescript
 from tree_sitter import Language, Parser, Node
 
-from app.core.logging import get_logger
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

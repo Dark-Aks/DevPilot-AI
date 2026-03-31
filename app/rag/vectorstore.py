@@ -18,9 +18,9 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from app.config import settings
-from app.services.rag.embeddings import get_embedding_function
-from app.core.logging import get_logger
-from app.core.metrics import track_latency
+from app.rag.embeddings import get_embedding_function
+from app.utils.logging import get_logger
+from app.utils.metrics import track_latency
 
 logger = get_logger(__name__)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, status
 
 from app.config import settings
-from app.core.cache import cache_stats
+from app.utils.cache import cache_stats
 
 router = APIRouter(tags=["health"])
 

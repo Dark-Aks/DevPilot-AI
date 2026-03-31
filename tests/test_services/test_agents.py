@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from app.services.agents.code_understanding import run_code_understanding
-from app.services.agents.test_generator import run_test_generator
-from app.services.agents.review import run_review
-from app.services.agents.documentation import run_documentation
+from app.agents.code_understanding import run_code_understanding
+from app.agents.test_generator import run_test_generator
+from app.agents.review import run_review
+from app.agents.documentation import run_documentation
 
 
 def _make_state(**overrides):

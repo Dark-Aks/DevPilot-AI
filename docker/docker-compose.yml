@@ -1,10 +1,12 @@
 services:
   devpilot:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - ../.env
     volumes:
       - chroma_data:/app/data/chroma
     restart: unless-stopped

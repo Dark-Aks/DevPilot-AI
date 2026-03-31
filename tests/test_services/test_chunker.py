@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.rag.chunker import chunk_code
+from app.rag.chunker import chunk_code
 
 
 SAMPLE_PYTHON = '''

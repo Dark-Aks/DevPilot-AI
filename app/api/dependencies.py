@@ -7,7 +7,7 @@ import chromadb
 from fastapi import Depends
 
 from app.config import Settings, settings
-from app.core.llm import get_llm
+from app.utils.llm import get_llm
 
 
 @lru_cache

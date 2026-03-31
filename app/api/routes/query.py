@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, status
 
 from app.models.schemas import QueryRequest, QueryResponse, CodeChunkResult
-from app.services.rag.retriever import retrieve
-from app.core.logging import get_logger
+from app.rag.retriever import retrieve
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["query"])

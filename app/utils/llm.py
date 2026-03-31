@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from langchain_core.language_models import BaseChatModel
 
-from app.core.logging import get_logger
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

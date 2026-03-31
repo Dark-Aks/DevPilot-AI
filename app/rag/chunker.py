@@ -3,8 +3,8 @@ from __future__ import annotations
 import tiktoken
 from langchain_core.documents import Document
 
-from app.services.github.parser import CodeChunk, detect_language, parse_file
-from app.core.logging import get_logger
+from app.services.parser import CodeChunk, detect_language, parse_file
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -5,10 +5,10 @@ import hmac
 from typing import Any
 
 from app.config import settings
-from app.core.logging import get_logger
-from app.services.github.client import GitHubClient
-from app.services.rag.chunker import chunk_code
-from app.services.rag.vectorstore import upsert_documents, delete_by_files
+from app.utils.logging import get_logger
+from app.services.client import GitHubClient
+from app.rag.chunker import chunk_code
+from app.rag.vectorstore import upsert_documents, delete_by_files
 
 logger = get_logger(__name__)
 

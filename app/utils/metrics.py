@@ -18,7 +18,7 @@ from typing import Any, Generator
 
 import tiktoken
 
-from app.core.logging import get_logger
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
