@@ -1,4 +1,14 @@
-# DevPilot AI
+# DevPilot AI 🚀
+
+AI agents that understand, test, and improve your codebase automatically.
+
+### What it does
+- Explains PR changes
+- Generates test cases
+- Suggests improvements
+
+### Why it matters
+Reduces developer effort and improves code quality using LLM + RAG + Agents
 
 **AI-Powered Codebase Intelligence Agent** — A production-grade system that combines **RAG (Retrieval-Augmented Generation)**, **conditional multi-agent orchestration**, and **GitHub integration** to automatically analyze code changes, generate tests, update documentation, and perform code reviews.
 
