@@ -1,524 +1,309 @@
-# DevPilot AI
+# DevPilot AI (.NET 8 Migration)
 
-**AI-Powered Codebase Intelligence Agent** — A production-grade system that combines **RAG (Retrieval-Augmented Generation)**, **conditional multi-agent orchestration**, and **GitHub integration** to automatically analyze code changes, generate tests, update documentation, and perform code reviews.
+## 1. Project Title + Badges
 
-Built with **FastAPI**, **LangChain**, **LangGraph**, **ChromaDB**, and **OpenAI** — designed to demonstrate real-world AI agent architecture with interview-ready system design.
+![Build](https://github.com/Dark-Aks/DevPilot-AI/actions/workflows/ci.yml/badge.svg)
+![.NET 8](https://img.shields.io/badge/.NET-8.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
----
+## 2. What It Does
+DevPilot AI is an AI-assisted code intelligence service for GitHub repositories. It ingests repository code, builds semantic retrieval context, and reacts to webhook push events with specialized analysis agents. The system posts actionable engineering feedback by routing only relevant agents for each change type.
 
-## System Architecture
+## 3. High-Level Design (HLD)
 
-### High-Level Overview
-
-```mermaid
-flowchart TB
-    subgraph Input Layer
-        GH[GitHub Webhook<br/>Push Events · HMAC Auth]
-        API[REST API<br/>Ingest · Query · Health]
-    end
-
-    subgraph "FastAPI Backend"
-        WH[Webhook Handler<br/>Signature Verification]
-        ING[Ingestion Service<br/>Full Repo + Incremental]
-        QRY[Query Service<br/>Hybrid Search]
-        HC[Health Check<br/>Cache Stats]
-    end
-
-    subgraph "RAG Pipeline"
-        TS[tree-sitter Parser<br/>AST → Functions · Classes · Methods]
-        CHK[Code Chunker<br/>Boundary-Aware Splitting]
-        EMB[Batch Embeddings<br/>text-embedding-3-small]
-        VS[(ChromaDB<br/>Per-Repo Collections)]
-        RET[Hybrid Retriever<br/>Vector + BM25 + Re-ranking]
-    end
-
-    subgraph "Resilience Layer"
-        CB[Circuit Breaker<br/>CLOSED → OPEN → HALF_OPEN]
-        FB[Agent Fallback<br/>Graceful Degradation]
-        TO[Timeout Guards<br/>LLM + External APIs]
-        CA[LRU Cache<br/>Retrieval · Embedding · LLM]
-    end
-
-    subgraph "LangGraph Workflow"
-        CL[①  Classify Changes<br/>Regex Heuristics]
-        RC[②  Retrieve Context<br/>Hybrid RAG]
-        subgraph "③  Conditional Agent Dispatch"
-            CU[Code Understanding]
-            TG[Test Generator<br/>k6 · Selenium]
-            DOC[Documentation]
-            REV[Code Review]
-        end
-        MET[④  Collect Metrics<br/>Tokens · Cost · Latency]
-    end
-
-    subgraph Output
-        JSON[Structured JSON<br/>WorkflowResponse]
-        PR[GitHub PR Comment<br/>Markdown Formatted]
-        OBS[Observability<br/>structlog · Metrics]
-    end
-
-    GH --> WH --> ING
-    API --> ING & QRY & HC
-    ING --> TS --> CHK --> EMB --> VS
-    QRY --> RET --> VS
-    WH --> CL
-    CL -->|"change_types"| RC
-    RC -->|"rag_context"| CU & TG & DOC & REV
-    CU & TG & DOC & REV --> MET
-    MET --> JSON & PR & OBS
-    CB -.-> WH
-    FB -.-> CU & TG & DOC & REV
-    CA -.-> RET & EMB
+```text
+GitHub Push Event
+      |
+      v
+Webhook Handler (HMAC verify)
+      |
+      v
+Workflow Orchestrator
+      |
+      +-------------------------------+
+      |            |        |         |
+      v            v        v         v
+Code Understanding Test Gen Docs    Review
+      \            |        |         /
+       +-----------+--------+--------+
+                   |
+                   v
+         GitHub PR Comment Publisher
 ```
 
-### Agent Workflow — Conditional Routing (LangGraph)
+### API Layer
+The API layer is implemented with ASP.NET Core Web API using minimal hosting and controller endpoints. It applies API key authentication through middleware, endpoint-specific rate limiting via sliding window policies, structured Serilog JSON logging, and OpenAPI documentation with API-key security definitions.
 
-This is the core intelligence of the system. Unlike a naive pipeline that runs all agents on every change, DevPilot **classifies changes first** and **routes to only the relevant agents**:
+### RAG Pipeline
+The RAG pipeline transforms source files into semantically meaningful chunks, embeds them with OpenAI-compatible embedding APIs, stores vectors in ChromaDB, and retrieves context with hybrid vector + BM25 re-ranking. This reduces token usage and improves relevance for agent prompts.
+
+### Agent System
+The agent subsystem is built around a Workflow Orchestrator and four domain-specific agents (code understanding, test generation, documentation, and review). It classifies changed files, retrieves context, dispatches agents in parallel, and safely degrades if one agent fails.
+
+### Infrastructure
+Infrastructure services include a generic circuit breaker, tiered in-memory caching with hit-rate metrics, request-level token/cost/latency accounting, and resilient service wrappers for external dependencies like GitHub and model APIs.
+
+### Why RAG over full-context LLM
+RAG was chosen to keep prompts bounded, reduce cost, and prioritize relevant code slices instead of flooding the model with the entire repository. It improves latency and lets the system scale to large codebases with predictable token usage.
+
+### Why Semantic Kernel over plain OpenAI SDK
+Semantic Kernel provides a first-class orchestration abstraction for multiple “agent-like” functions, prompt execution workflows, and future extension points (plugins/planners), while still allowing direct model-level control where needed.
+
+## 4. Low-Level Design (LLD)
 
 ```mermaid
-stateDiagram-v2
-    [*] --> ClassifyChanges
+classDiagram
+    class IChunker
+    class CodeChunker
+    class IEmbeddingService
+    class OpenAIEmbeddingService
+    class IVectorStore
+    class ChromaVectorStore
+    class IRetriever
+    class HybridRetriever
+    class IAgent
+    class CodeUnderstandingAgent
+    class TestGeneratorAgent
+    class DocumentationAgent
+    class ReviewAgent
+    class WorkflowOrchestrator
+    class IGitHubService
+    class GitHubService
+    class IIngestionService
+    class IngestionService
+    class IQueryService
+    class QueryService
+    class CacheService
+    class CircuitBreaker~T~
 
-    ClassifyChanges --> RetrieveContext : change_types + agents_to_run
-
-    RetrieveContext --> RunSelectedAgents : rag_context
-
-    state RunSelectedAgents {
-        [*] --> fork
-        fork --> CodeUnderstanding : if "code_understanding" in agents_to_run
-        fork --> TestGenerator : if "test_generator" in agents_to_run
-        fork --> Documentation : if "documentation" in agents_to_run
-        fork --> Review : if "review" in agents_to_run
-        CodeUnderstanding --> join
-        TestGenerator --> join
-        Documentation --> join
-        Review --> join
-        join --> [*]
-    }
-
-    RunSelectedAgents --> CollectMetrics
-    CollectMetrics --> [*]
+    IChunker <|.. CodeChunker
+    IEmbeddingService <|.. OpenAIEmbeddingService
+    IVectorStore <|.. ChromaVectorStore
+    IRetriever <|.. HybridRetriever
+    IAgent <|.. CodeUnderstandingAgent
+    IAgent <|.. TestGeneratorAgent
+    IAgent <|.. DocumentationAgent
+    IAgent <|.. ReviewAgent
+    IGitHubService <|.. GitHubService
+    IIngestionService <|.. IngestionService
+    IQueryService <|.. QueryService
+    WorkflowOrchestrator --> IAgent
+    WorkflowOrchestrator --> IRetriever
+    IngestionService --> IChunker
+    IngestionService --> IEmbeddingService
+    IngestionService --> IVectorStore
+    QueryService --> IRetriever
 ```
-
-**Routing Table** — What runs for each change type:
-
-| Change Type | Agents Invoked | Example Files |
-|-------------|----------------|---------------|
-| `api` | understanding + test_gen + review | `routes/users.py`, `controller.ts` |
-| `logic` | understanding + review | `utils/math.py`, `services/billing.js` |
-| `ui` | test_gen (Selenium) + review | `App.tsx`, `styles.css` |
-| `config` | documentation + review | `Dockerfile`, `settings.yaml` |
-| `schema` | documentation + review + understanding | `models/user.py`, `migration/` |
-| `docs` | documentation only | `README.md`, `CHANGELOG.md` |
-| `test` | review only | `test_login.py`, `spec/auth.ts` |
-| `unknown` | all four agents | Fallback for unrecognized patterns |
-
-### Data Flow — Webhook to Response
 
 ```mermaid
 sequenceDiagram
     participant GH as GitHub
-    participant WH as Webhook Handler
-    participant CHK as Chunker
-    participant VS as ChromaDB
-    participant CL as Classify
-    participant RET as Hybrid Retriever
+    participant API as WebhookController
+    participant ORCH as WorkflowOrchestrator
+    participant RET as HybridRetriever
     participant AG as Agent Pool
-    participant MET as Metrics
+    participant GHS as GitHubService
 
-    GH->>WH: Push event (HMAC signed)
-    WH->>WH: Verify signature
-    WH->>CHK: chunk_code(file, content, repo, commit_id)
-    CHK->>VS: upsert_documents(repo, docs) [batched]
-    WH->>CL: classify_changes(changed_files)
-    CL-->>CL: Regex heuristics → ChangeType set
-    CL->>RET: retrieve_for_changes(files, repo)
-    RET->>VS: similarity_search(query, 3× top_k)
-    RET-->>RET: BM25 keyword scoring
-    RET-->>RET: Re-rank (α·vector + (1-α)·keyword + bonus)
-    RET->>AG: Top-K context + diff
-    AG->>AG: asyncio.gather(*selected_agents)
-    AG->>MET: Agent outputs + errors
-    MET->>GH: Structured response / PR comment
+    GH->>API: POST /api/webhook/github (payload + HMAC)
+    API->>API: Validate HMAC-SHA256
+    API-->>GH: 202 Accepted
+    API->>ORCH: RunAsync(state)
+    ORCH->>ORCH: Classify changes
+    ORCH->>RET: RetrieveAsync(query, repo)
+    RET-->>ORCH: Ranked context chunks
+    ORCH->>AG: Fan-out Task.WhenAll
+    AG-->>ORCH: Agent results + metrics
+    ORCH->>GHS: PostPullRequestCommentAsync
 ```
 
-### Hybrid Search Pipeline
-
-The retriever implements a three-stage pipeline to balance **semantic understanding** with **exact identifier matching**:
-
-```
-  Query: "How does calculateTax work?"
-                    │
-          ┌─────────┴─────────┐
-          │                   │
-    Vector Search          Keyword Search
-    (ChromaDB)              (BM25-style)
-    Semantic meaning        Exact identifiers
-    "tax computation"       "calculateTax"
-          │                   │
-          └─────────┬─────────┘
-                    │
-              Re-Ranking
-        α·vector_rank + (1-α)·keyword_score + metadata_bonus
-        (function/class name match → +0.3 bonus)
-                    │
-              Top-K Results
+```mermaid
+stateDiagram-v2
+    [*] --> Closed
+    Closed --> Open: failures >= threshold
+    Open --> HalfOpen: recovery window elapsed
+    HalfOpen --> Closed: probe succeeds
+    HalfOpen --> Open: probe fails
 ```
 
-- **α = 0.7** (default) — weighted toward vector similarity
-- Over-fetches **3× top_k** candidates from ChromaDB, then re-ranks to final top_k
-- Results cached in LRU with TTL to avoid redundant vector DB queries
+Hybrid search formula:
 
----
+$$
+score = \alpha \times vectorRank + (1-\alpha) \times bm25Score + bonus
+$$
 
-## Design Decisions
+Where bonus is +0.3 when query terms match symbol metadata (function/class names).
 
-### Why RAG Instead of Full-Context LLM?
+### Agent Routing Table Logic
+`ChangeType -> agent names` mapping determines which agents execute; multiple change types union their agent sets, and `Unknown` maps to all four agents.
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Full context** | Simple, no retrieval step | Token limits (~128K), cost scales linearly, no incremental updates |
-| **RAG (chosen)** | Scales to large repos, cost-efficient (only relevant chunks sent), incremental updates via webhooks | Retrieval quality matters, needs embedding maintenance |
+### Three-tier cache strategy
+- `retrieval`: query-to-ranked-context cache
+- `embedding`: text-to-vector cache (extension point)
+- `llm`: prompt-to-response cache (extension point)
 
-DevPilot uses RAG because real codebases (10K+ files) exceed context windows. The hybrid retriever mitigates classic RAG failure modes (missed identifier matches) via BM25 keyword scoring.
+## 5. API Reference
 
-### Why LangGraph Over a Simple Pipeline?
+| Method | Path | Auth Required | Rate Limit | Request Body | Response Body |
+|---|---|---|---|---|---|
+| GET | /health | No | None | None | HealthResponse |
+| POST | /api/ingest | Yes (`X-API-Key`) | 10/min per IP | IngestRequest | IngestResponse |
+| POST | /api/query | Yes (`X-API-Key`) | 60/min per IP | QueryRequest | QueryResponse |
+| POST | /api/webhook/github | Yes (`X-API-Key`) | 100/min per IP | GitHub push payload | 202 Accepted |
 
-A sequential pipeline (chunk → embed → run all agents) wastes compute. LangGraph provides:
+## 6. API Flow Diagrams
 
-1. **Conditional routing** — Only relevant agents execute per change type
-2. **Parallel fan-out** — Selected agents run via `asyncio.gather`, not sequentially
-3. **Typed state** — `AgentState` TypedDict enforces data contracts between nodes
-4. **Metrics at boundaries** — Each node boundary is a natural instrumentation point
+```mermaid
+sequenceDiagram
+    participant Client
+    participant IngestController
+    participant IngestionService
+    participant Chunker
+    participant Embedding
+    participant Chroma
 
-### Why ChromaDB?
-
-| Vector DB | Ops Complexity | Python-Native | Persistence | Production Path |
-|-----------|---------------|---------------|-------------|-----------------|
-| ChromaDB (chosen) | Zero (embedded) | Yes | File-based | Client-server mode or migrate to Pinecone |
-| Pinecone | Managed SaaS | SDK | Cloud | Already production |
-| Weaviate | Self-hosted | SDK | Docker | Kubernetes deployment |
-
-ChromaDB gives zero-ops local development with a clear migration path. Per-repo collection isolation prevents cross-contamination.
-
-### Why tree-sitter for Parsing?
-
-- **Language-agnostic AST** — Same API for Python, JS, TS (extensible to Go, Rust, Java)
-- **Boundary-aware chunking** — Splits at function/class boundaries, not arbitrary token counts
-- **Metadata extraction** — Function names, class names, line ranges flow into vector store metadata for re-ranking
-
-### Resilience Strategy
-
-```
-External Call (LLM / GitHub API)
-        │
-   ┌────┴────┐
-   │ Timeout │ ← with_timeout(coro, seconds)
-   └────┬────┘
-   ┌────┴──────────┐
-   │ Circuit Breaker│ ← CLOSED → OPEN (after N failures) → HALF_OPEN (probe)
-   └────┬──────────┘
-   ┌────┴──────────┐
-   │ Agent Fallback │ ← @agent_fallback returns default on ANY exception
-   └────┬──────────┘
-        │
-   Graceful response (never crashes the workflow)
+    Client->>IngestController: POST /api/ingest
+    IngestController->>IngestionService: IngestRepositoryAsync
+    IngestionService->>Chunker: ChunkAsync
+    IngestionService->>Embedding: EmbedAsync
+    IngestionService->>Chroma: UpsertAsync
+    IngestionService-->>IngestController: IngestResponse
+    IngestController-->>Client: 200 OK
 ```
 
-Every agent is wrapped with `@agent_fallback` — if an LLM call fails, the workflow continues with a default value and records the error in metrics. The circuit breaker prevents cascading failures when an external service is down.
+```mermaid
+sequenceDiagram
+    participant Client
+    participant QueryController
+    participant QueryService
+    participant Retriever
+    participant Embedding
+    participant Chroma
 
----
+    Client->>QueryController: POST /api/query
+    QueryController->>QueryService: SearchAsync
+    QueryService->>Retriever: RetrieveAsync
+    Retriever->>Embedding: EmbedQueryAsync
+    Retriever->>Chroma: SimilaritySearchAsync
+    Retriever-->>QueryService: Reranked chunks
+    QueryService-->>QueryController: QueryResponse
+    QueryController-->>Client: 200 OK
+```
 
-## Features
+```mermaid
+sequenceDiagram
+    participant GH as GitHub
+    participant Webhook as WebhookController
+    participant Orchestrator
+    participant Agents as Agent Pool
 
-### Core Intelligence
-- **Conditional Agent Routing** — Classifies changes by type (API, logic, UI, config, schema, docs, test) and dispatches only the relevant agents
-- **Hybrid RAG Retrieval** — Vector similarity + BM25 keyword matching + metadata re-ranking with configurable alpha blending
-- **4 Specialized Agents** orchestrated via LangGraph StateGraph:
-  - **Code Understanding** — Explains changes, analyzes blast radius, grounded in actual diff + context
-  - **Test Generator** — Creates k6 load tests (API changes) and Selenium UI tests (UI changes)
-  - **Documentation** — Generates/updates docs with anti-hallucination guardrails
-  - **Code Review** — Detects bugs, security issues, performance problems; flags only real issues visible in the diff
+    GH->>Webhook: POST /api/webhook/github
+    Webhook->>Webhook: Validate HMAC
+    Webhook-->>GH: 202 Accepted
+    Webhook->>Orchestrator: fire-and-forget RunAsync
+    Orchestrator->>Orchestrator: classify + retrieve context
+    par Parallel agents
+      Orchestrator->>Agents: code_understanding
+      Orchestrator->>Agents: test_generator
+      Orchestrator->>Agents: documentation
+      Orchestrator->>Agents: review
+    end
+    Agents-->>Orchestrator: structured outputs
+```
 
-### Production Infrastructure
-- **AST-Aware Code Parsing** — tree-sitter for Python, JavaScript, TypeScript (function/class boundary chunking)
-- **Batched Embedding** — Configurable batch size prevents OOM on large repositories
-- **LRU Caching with TTL** — Three-tier cache (retrieval, embedding, LLM) with hit rate tracking
-- **Circuit Breaker** — CLOSED → OPEN → HALF_OPEN state machine for GitHub API / LLM resilience
-- **Agent Fallback Decorators** — Graceful degradation; no single agent failure crashes the pipeline
-- **Timeout Guards** — Configurable per-operation timeouts for all external calls
-- **Per-Request Metrics** — Token usage, cost estimation, latency breakdown, retrieval hit rate
-- **Structured Logging** — JSON-formatted structured logs via structlog
-- **Multi-LLM Support** — Swap between OpenAI (gpt-4o) and Anthropic (Claude) via config
-- **GitHub Webhook Integration** — HMAC-SHA256 signature verification, incremental embedding updates
+## 7. Agent Routing Table
 
----
+| ChangeType | Agents Invoked | Example Files |
+|---|---|---|
+| Api | code_understanding, test_generator, review | `Controllers/UserController.cs` |
+| Logic | code_understanding, review | `Services/OrderService.cs` |
+| Ui | test_generator, review | `web/src/components/Nav.tsx` |
+| Config | documentation, review | `appsettings.json`, `.github/workflows/ci.yml` |
+| Schema | documentation, review, code_understanding | `Models/UserSchema.cs` |
+| Docs | documentation | `README.md` |
+| Test | review | `tests/OrderServiceTests.cs` |
+| Unknown | all four agents | `scripts/misc.txt` |
 
-## Quick Start
+## 8. Configuration Reference
 
-### 1. Clone & Configure
+| Environment Variable | Default | Description |
+|---|---|---|
+| DEVPILOT_API_KEY | empty | API key checked by ApiKeyMiddleware |
+| OPENAI_API_KEY | empty | API key for embedding/model provider |
+| OPENAI_BASE_URL | `https://api.openai.com/v1/embeddings` | Embedding endpoint override |
+| GITHUB_TOKEN | empty | GitHub API token |
+| GITHUB_WEBHOOK_SECRET | empty | HMAC secret for webhook validation |
+| CHROMA_HOST | `localhost` | ChromaDB host |
+| CHROMA_PORT | `8001` | ChromaDB mapped port |
+| CORS_ORIGIN | `https://example.com` | Allowed origin in production |
+| ASPNETCORE_ENVIRONMENT | `Development` | ASP.NET environment |
+
+## 9. Quick Start
+
+1. Clone the repository.
+2. Copy `.env.example` to `.env` and set required secrets.
+3. Run containers (starts both the API on port 8000 and ChromaDB on port 8001):
+   ```bash
+   docker compose -f docker/docker-compose.yml up --build
+   ```
+4. Or run the API locally (requires ChromaDB running separately):
+   ```bash
+   dotnet run --project src/DevPilotAI.Api
+   ```
+
+## 10. Running Tests
 
 ```bash
-git clone https://github.com/your-org/devpilot-ai.git
-cd devpilot-ai
-cp .env.example .env
-# Edit .env with your API keys
+dotnet test DevPilotAI.sln
 ```
 
-### 2. Run with Docker
+Unit tests only:
 
 ```bash
-docker-compose up --build
+dotnet test DevPilotAI.sln --filter "FullyQualifiedName!~Integration"
 ```
 
-### 3. Run Locally
+Integration tests only (Docker required):
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+dotnet test DevPilotAI.sln --filter "FullyQualifiedName~Integration|FullyQualifiedName~ControllerTests"
 ```
 
-The API is available at `http://localhost:8000`.
-
----
-
-## API Reference
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Health check + cache stats |
-| `POST` | `/api/ingest` | Ingest a full GitHub repository |
-| `POST` | `/api/query` | Hybrid semantic search over ingested codebase |
-| `POST` | `/api/webhook/github` | Receive GitHub push webhooks |
-
-### Ingest a Repository
-
-```bash
-curl -X POST http://localhost:8000/api/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"repo_url": "https://github.com/owner/repo", "branch": "main"}'
-```
-
-### Query the Codebase
-
-```bash
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "How does authentication work?",
-    "repo": "owner/repo",
-    "top_k": 10,
-    "filter_language": "python"
-  }'
-```
-
-### Health Check (with cache observability)
-
-```bash
-curl http://localhost:8000/health
-```
-
-```json
-{
-  "status": "ok",
-  "version": "0.2.0",
-  "environment": "development",
-  "caches": {
-    "retrieval_cache": { "size": 42, "hits": 156, "misses": 23, "hit_rate": 0.871 },
-    "embedding_cache": { "size": 1203, "hits": 4521, "misses": 89, "hit_rate": 0.981 },
-    "llm_cache": { "size": 12, "hits": 34, "misses": 8, "hit_rate": 0.81 }
-  }
-}
-```
-
-### GitHub Webhook Setup
-
-1. Go to your repo → Settings → Webhooks → Add webhook
-2. **Payload URL:** `https://your-domain.com/api/webhook/github`
-3. **Content type:** `application/json`
-4. **Secret:** Same as `GITHUB_WEBHOOK_SECRET` in your `.env`
-5. **Events:** Select "Just the push event"
-
-### Example Workflow Response
-
-When a push event triggers the agent workflow, you get a structured response with routing decisions, agent outputs, and metrics:
-
-```json
-{
-  "repo": "owner/repo",
-  "branch": "main",
-  "changed_files": [
-    { "filename": "src/routes/users.py", "status": "modified" }
-  ],
-  "change_types": ["api"],
-  "agents_used": ["code_understanding", "test_generator", "review"],
-  "routing_reasoning": "Detected change types: ['api']. Routing to agents: ['code_understanding', 'review', 'test_generator'].",
-  "code_understanding": {
-    "summary": "Modified user registration endpoint to add email validation",
-    "details": ["Added regex email validator in create_user()"],
-    "impact": "All registration API consumers will now get 422 on invalid emails"
-  },
-  "test_suggestions": [
-    {
-      "test_type": "k6",
-      "file_name": "tests/load/test_registration.js",
-      "description": "Load test for user registration with email validation",
-      "code": "import http from 'k6/http'; ..."
-    }
-  ],
-  "review_findings": [
-    {
-      "severity": "warning",
-      "category": "security",
-      "file_path": "src/routes/users.py",
-      "line": 42,
-      "message": "Email regex may be vulnerable to ReDoS",
-      "suggestion": "Use a compiled regex with re2 or limit input length"
-    }
-  ],
-  "metrics": {
-    "request_id": "abc123def",
-    "total_input_tokens": 3420,
-    "total_output_tokens": 1105,
-    "total_cost_usd": 0.0234,
-    "total_latency_ms": 4521.3,
-    "retrieval_chunks": 15,
-    "retrieval_hit_rate": 1.0,
-    "agents_invoked": ["code_understanding", "test_generator", "review"]
-  },
-  "errors": []
-}
-```
-
----
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| **LLM** | | |
-| `LLM_PROVIDER` | `openai` | LLM provider (`openai` \| `anthropic`) |
-| `LLM_MODEL` | `gpt-4o` | Model name |
-| `LLM_TEMPERATURE` | `0.1` | Generation temperature |
-| `OPENAI_API_KEY` | — | OpenAI API key |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key |
-| **Embeddings** | | |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
-| `EMBEDDING_BATCH_SIZE` | `100` | Documents per embedding batch |
-| **GitHub** | | |
-| `GITHUB_TOKEN` | — | Personal access token |
-| `GITHUB_WEBHOOK_SECRET` | — | Webhook HMAC secret |
-| **RAG** | | |
-| `RAG_TOP_K` | `15` | Initial retrieval candidates |
-| `RAG_RERANK_TOP_K` | `8` | Final results after re-ranking |
-| `RAG_HYBRID_ALPHA` | `0.7` | Vector vs keyword weight (0=keyword, 1=vector) |
-| **Caching** | | |
-| `CACHE_TTL_SECONDS` | `300` | Default cache TTL |
-| `CACHE_MAX_SIZE` | `1000` | Max entries per cache tier |
-| **Resilience** | | |
-| `LLM_TIMEOUT_SECONDS` | `120` | Per-call LLM timeout |
-| `GITHUB_CIRCUIT_BREAKER_THRESHOLD` | `5` | Failures before circuit opens |
-| `GITHUB_CIRCUIT_BREAKER_RECOVERY` | `60` | Seconds before half-open probe |
-| **App** | | |
-| `CHROMA_PERSIST_DIR` | `./data/chroma` | ChromaDB storage path |
-| `LOG_LEVEL` | `INFO` | Logging level |
-| `APP_ENV` | `development` | Environment tag |
-
----
-
-## Project Structure
-
-```
-app/
-├── main.py                           # FastAPI app, lifespan, CORS
-├── config.py                         # Pydantic Settings (all config above)
-├── api/
-│   ├── dependencies.py               # Dependency injection
-│   └── routes/
-│       ├── health.py                 # GET /health (+ cache stats)
-│       ├── ingest.py                 # POST /api/ingest
-│       ├── query.py                  # POST /api/query (hybrid search)
-│       └── webhook.py                # POST /api/webhook/github
-├── agents/
-│   ├── state.py                      # LangGraph TypedDict + ChangeType enum
-│   ├── graph.py                      # StateGraph: classify → retrieve → route → metrics
-│   ├── code_understanding.py         # Code analysis agent (@agent_fallback)
-│   ├── test_generator.py             # k6 + Selenium test agent (@agent_fallback)
-│   ├── documentation.py              # Documentation agent (@agent_fallback)
-│   └── review.py                     # Code review agent (@agent_fallback)
-├── rag/
-│   ├── chunker.py                    # AST-aware chunking with commit_id tracking
-│   ├── embeddings.py                 # OpenAI embedding wrapper
-│   ├── vectorstore.py                # ChromaDB: batched upsert, per-repo collections
-│   └── retriever.py                  # Hybrid search: vector + BM25 + re-ranking + cache
-├── services/
-│   ├── client.py                     # Async GitHub REST API client (httpx)
-│   ├── parser.py                     # tree-sitter AST parser (Python/JS/TS)
-│   └── webhook_handler.py            # Push event processing + incremental updates
-├── models/
-│   └── schemas.py                    # Pydantic request/response models
-└── utils/
-    ├── cache.py                      # LRU cache with TTL (3 tiers)
-    ├── errors.py                     # Exception hierarchy + circuit breaker + fallback
-    ├── metrics.py                    # Token counting, cost estimation, latency tracking
-    ├── llm.py                        # Multi-provider LLM factory (OpenAI / Anthropic)
-    ├── logging.py                    # structlog JSON configuration
-    └── formatting.py                 # PR comment Markdown formatter
-
-tests/
-├── conftest.py                       # Shared fixtures
-├── test_api/                         # API endpoint tests
-│   ├── test_ingest.py
-│   ├── test_query.py
-│   └── test_webhook.py
-├── test_core/                        # Core module tests
-│   ├── test_cache.py                 # LRU cache + TTL + eviction
-│   ├── test_errors.py                # Circuit breaker + fallback + timeout
-│   └── test_metrics.py               # Token counting + cost + RequestMetrics
-└── test_services/                    # Service tests
-    ├── test_agents.py                # Agent execution + fallback behavior
-    ├── test_chunker.py               # tree-sitter chunking + commit_id
-    ├── test_graph.py                 # Routing table + change classification
-    └── test_retriever.py             # Hybrid search + re-ranking + keyword scoring
-
-docker/
-├── Dockerfile                        # Multi-stage Python build
-└── docker-compose.yml                # Production compose with healthcheck
-```
-
----
-
-## Running Tests
-
-```bash
-pip install -r requirements.txt
-pytest tests/ -v
-```
-
----
-
-## Tech Stack
+## 11. Tech Stack
 
 | Layer | Technology | Why |
-|-------|-----------|-----|
-| API | FastAPI + Uvicorn | Async-native, auto OpenAPI docs, dependency injection |
-| Agent Orchestration | LangGraph (StateGraph) | Conditional routing, typed state, parallel execution |
-| LLM | LangChain (OpenAI / Anthropic) | Provider abstraction, prompt templating, structured output |
-| Vector Store | ChromaDB | Zero-ops embedded mode, file persistence, per-collection isolation |
-| Embeddings | OpenAI text-embedding-3-small | Strong code understanding, 1536 dimensions, low cost |
-| Code Parsing | tree-sitter | Language-agnostic AST, boundary-aware chunking, metadata extraction |
-| Caching | Custom LRU + TTL | No Redis dependency for single-process; three-tier (retrieval, embedding, LLM) |
-| Logging | structlog | JSON structured logs, context binding, production-ready |
-| Config | pydantic-settings | Type-safe env vars, `.env` file support, validation |
-| HTTP | httpx | Async GitHub API calls with connection pooling |
-| Containerization | Docker + docker-compose | One-command deployment |
+|---|---|---|
+| API | ASP.NET Core Web API (.NET 8) | High-performance, production-ready HTTP stack |
+| Orchestration | Semantic Kernel | Agent/function orchestration abstractions |
+| LLM/Embeddings | OpenAI-compatible APIs | High-quality code reasoning + embeddings |
+| Vector DB | ChromaDB | Simple self-hosted semantic search |
+| Parsing | Roslyn + tree-sitter style fallback | Precise C# AST and multi-language coverage |
+| Caching | IMemoryCache | Low-latency local cache with observability |
+| Logging | Serilog JSON Console | Structured logs for ops and analysis |
+| Validation | FluentValidation | Declarative request validation |
+| Testing | xUnit + Moq + FluentAssertions + Testcontainers | Fast unit tests + realistic integration tests |
+| CI/CD | GitHub Actions + Codecov | Automated quality gates and coverage reporting |
 
----
+## 12. Design Decisions
 
-## License
+### RAG vs full-context LLM
+RAG keeps context focused, cost-bounded, and fast by retrieving only relevant chunks. Full-context prompting is expensive, noisy, and scales poorly with larger repositories.
 
-MIT
+### Semantic Kernel vs raw OpenAI SDK
+Semantic Kernel provides clear extension points and orchestration ergonomics for multi-agent workflows. Raw SDK calls remain useful, but orchestration complexity grows quickly.
+
+### ChromaDB vs Pinecone
+ChromaDB is open-source and straightforward to self-host in local/dev environments. It minimizes operational overhead for this architecture while supporting required vector search patterns.
+
+### Roslyn vs tree-sitter
+Roslyn offers precise syntax and semantic introspection for C#. tree-sitter style parsing covers non-C# languages with flexible parser support.
+
+### IMemoryCache vs Redis
+IMemoryCache is enough for single-instance deployments with minimal complexity. Redis is better for distributed cache coherence, but adds infrastructure cost.
+
+## 13. Improvements Over Original Python Version
+
+1. API key authentication middleware with consistent 401 JSON responses.
+2. Endpoint-level sliding-window rate limiting per client IP.
+3. Integration tests using Testcontainers for realistic ChromaDB coverage.
+4. CI/CD pipeline with .NET build, tests, and Codecov reporting.
+5. Proper BM25 scoring using rank_bm25 / BM25.NET style ranking combined with vector re-ranking.

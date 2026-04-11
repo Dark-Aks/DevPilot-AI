@@ -1,32 +1,14 @@
-# ── Build stage ──
-FROM python:3.12-slim AS builder
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY src/DevPilotAI.Api/DevPilotAI.Api.csproj src/DevPilotAI.Api/
+RUN dotnet restore src/DevPilotAI.Api/DevPilotAI.Api.csproj
+COPY src/DevPilotAI.Api/ src/DevPilotAI.Api/
+RUN dotnet publish src/DevPilotAI.Api/DevPilotAI.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-WORKDIR /build
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
-# ── Runtime stage ──
-FROM python:3.12-slim
-
-RUN groupadd -r devpilot && useradd -r -g devpilot -m devpilot
-
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-
-COPY --from=builder /install /usr/local
-COPY app/ ./app/
-
-RUN mkdir -p /app/data/chroma && chown -R devpilot:devpilot /app
-
-USER devpilot
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    CHROMA_PERSIST_DIR=/app/data/chroma
-
-EXPOSE 8000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+COPY --from=build /app/publish .
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
+ENTRYPOINT ["dotnet", "DevPilotAI.Api.dll"]
