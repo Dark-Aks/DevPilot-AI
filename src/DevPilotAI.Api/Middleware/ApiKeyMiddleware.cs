@@ -11,7 +11,9 @@ public sealed class ApiKeyMiddleware : IMiddleware
         "/health",
         "/swagger",
         "/swagger/index.html",
-        "/swagger/v1/swagger.json"
+        "/swagger/v1/swagger.json",
+        "/api/v1/auth/token",
+        "/api/v1/auth/refresh"
     ];
 
     private readonly ILogger<ApiKeyMiddleware> _logger;

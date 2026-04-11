@@ -62,6 +62,8 @@ var app = builder.Build();
 app.UseDevPilotPipeline();
 app.UseMiddleware<ApiKeyMiddleware>();
 app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseRateLimiter();
 app.MapControllers();
 

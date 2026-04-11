@@ -25,7 +25,25 @@ jobs:
         run: dotnet build DevPilotAI.sln --no-restore
 
       - name: Test with coverage
-        run: dotnet test DevPilotAI.sln --no-build --verbosity normal --collect:"XPlat Code Coverage"
+        run: dotnet test DevPilotAI.sln --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ./coverage
+          fail_ci_if_error: true
+
+      - name: Check coverage threshold
+        run: |
+          REPORT=$(find ./coverage -name 'coverage.cobertura.xml' | head -1)
+          if [ -z "$REPORT" ]; then
+            echo "No coverage report found"
+            exit 1
+          fi
+          LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$REPORT" | head -1)
+          PERCENT=$(echo "$LINE_RATE * 100" | bc -l | cut -d. -f1)
+          echo "Coverage: ${PERCENT}%"
+          if [ "$PERCENT" -lt 80 ]; then
+            echo "Coverage ${PERCENT}% is below 80% threshold"
+            exit 1
+          fi

@@ -1,10 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Asp.Versioning;
 using DevPilotAI.Api.Agents;
 using DevPilotAI.Api.Configuration;
+using DevPilotAI.Api.Infrastructure.Caching;
 using DevPilotAI.Api.Infrastructure.Metrics;
 using DevPilotAI.Api.Models.Requests;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -12,24 +15,29 @@ using Microsoft.Extensions.Options;
 namespace DevPilotAI.Api.Controllers;
 
 [ApiController]
-[Route("api/webhook/github")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/webhook/github")]
 [EnableRateLimiting("webhook")]
+[Authorize]
 public sealed class WebhookController : ControllerBase
 {
     private readonly GitHubSettings _githubSettings;
     private readonly WorkflowOrchestrator _orchestrator;
     private readonly RequestMetricsFactory _metricsFactory;
+    private readonly ICacheProvider _cache;
     private readonly ILogger<WebhookController> _logger;
 
     public WebhookController(
         IOptions<GitHubSettings> githubSettings,
         WorkflowOrchestrator orchestrator,
         RequestMetricsFactory metricsFactory,
+        ICacheProvider cache,
         ILogger<WebhookController> logger)
     {
         _githubSettings = githubSettings.Value;
         _orchestrator = orchestrator;
         _metricsFactory = metricsFactory;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -50,6 +58,9 @@ public sealed class WebhookController : ControllerBase
             return BadRequest(new { error = "Invalid payload" });
         }
 
+        var metrics = _metricsFactory.Create();
+        var requestId = metrics.RequestId;
+
         _ = Task.Run(async () =>
         {
             try
@@ -69,18 +80,19 @@ public sealed class WebhookController : ControllerBase
                     AgentsToRun = new List<string>(),
                     RagContext = new List<Rag.CodeChunk>(),
                     Diff = string.Join("\n", payload.Commits.Select(c => c.Message)),
-                    Metrics = _metricsFactory.Create()
+                    Metrics = metrics
                 };
 
-                await _orchestrator.RunAsync(state, CancellationToken.None);
+                var results = await _orchestrator.RunAsync(state, CancellationToken.None);
+                await _cache.SetAsync($"workflow:{requestId}", new { agents = results, metrics }, TimeSpan.FromHours(1));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Background webhook workflow failed");
+                _logger.LogError(ex, "Background webhook workflow failed for {RequestId}", requestId);
             }
         }, CancellationToken.None);
 
-        return Accepted(new { status = "workflow_queued" });
+        return Accepted(new { status = "workflow_queued", requestId });
     }
 
     private bool IsValidSignature(string payload, string signatureHeader)

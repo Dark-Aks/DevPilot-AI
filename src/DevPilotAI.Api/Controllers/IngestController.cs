@@ -1,14 +1,18 @@
+using Asp.Versioning;
 using DevPilotAI.Api.Models.Requests;
 using DevPilotAI.Api.Models.Responses;
 using DevPilotAI.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace DevPilotAI.Api.Controllers;
 
 [ApiController]
-[Route("api/ingest")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/ingest")]
 [EnableRateLimiting("ingest")]
+[Authorize]
 public sealed class IngestController : ControllerBase
 {
     private readonly IIngestionService _ingestionService;
